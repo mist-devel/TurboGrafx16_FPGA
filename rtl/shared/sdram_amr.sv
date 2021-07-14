@@ -35,7 +35,11 @@
 // (Because it's project-specific, not board-specific.)
 // If the core has a variable clock, specify the fastest rate.
 
-module sdram_amr #(parameter SDRAM_tCK) (
+// SDRAM_RISKCONTENTION <set to 1 to leave less space between reads and subsequent writes in CL3 mode.>
+`define SDRAM_RISKCONTENTION 0
+
+module sdram_amr #(parameter SDRAM_tCK=7800 )
+(
 	// interface to the MT48LC16M16 chip
 	inout  [15:0] SDRAM_DQ,   // 16 bit bidirectional data bus
 	output reg [`SDRAM_ROWBITS-1:0] SDRAM_A,    // 13 bit multiplexed address bus
@@ -115,38 +119,6 @@ localparam NO_WRITE_BURST = 1'b1;   // 0= write burst enabled, 1=only single acc
 localparam MODE = { 3'b000, NO_WRITE_BURST, OP_MODE, CAS_LATENCY, ACCESS_TYPE, BURST_LENGTH}; 
 
 
-// Refresh logic
-
-// 64ms/8192 rows = 7.8us / autorefresh
-localparam RFRSH_CYCLES = 7800*1000/SDRAM_tCK;
-reg [10:0] refresh_cnt = 11'b0;
-reg need_refresh;
-always @(posedge clk)
-	need_refresh <= (refresh_cnt >= RFRSH_CYCLES);
-
-// We don't synchronise to the host core except with regard to refresh cycles,
-// which must be timed so as not to delay a VRAM access.
-// We supply a four-cycle window beginning shortly after clkref drops, during
-// which refresh may begin.
-
-reg clkref_d3;
-reg clkref_d2;
-reg clkref_d;
-reg [2:0] refreshwindow;
-
-always@(posedge clk) begin
-	clkref_d3<=clkref;
-	clkref_d2<=clkref_d3;
-	clkref_d<=clkref_d2;
-	if(clkref_d && !clkref_d2)
-			refreshwindow<=3'b000;
-	if(!blockrefresh)
-		refreshwindow<=refreshwindow+1'b1;
-end
-
-wire blockrefresh = refreshwindow[2];
-
-
 // RAM control signals
 
 // all possible commands
@@ -177,17 +149,17 @@ assign SDRAM_DQML = sd_dqm[0];
 
 // Read cycle - CL2, burst 1:
 // |     RAS     |     CAS     |     MASK    |    LATCH    |     RAS     |     CAS     | ....
-// | Act  | .... | .... | Read | .... | .... | .... | Ltch | Act  | .... | .... | Read | .... 
-//                                            <chip><high z>
-//                                                  < din reg'd >
-//                                                         <data to port>
+// | Act  | .... | .... | Read | .... | .... | Ltch | Act  | .... | .... | Read | .... 
+//                                        <chip><high z>
+//                                           < din reg'd >
+//                                                   <data to port>
 
 // Read cycle - CL3, burst 1:
-// |     RAS     |     CAS     |     MASK    |    LATCH    |     ...     | RAS         |     CAS     | ....
-// | Act  | .... | .... | Read | DQMs | .... | .... | .... | Ltch | .... | Act  | .... | .... | Read | .... 
-//                                                   <chip><high z>
-//                                                         < din reg'd >
-//                                                                <data to port>
+// |     RAS     |     CAS     |     MASK    |    LATCH    |     ...     | RAS         |     CAS     |
+// | Act  | .... | .... | Read | DQMs | .... | .... | Ltch | .... | Act  | .... | .... | Read | .... 
+//                                               <chip><high z>
+//                                                  < din reg'd >
+//                                                         <data to port>
 
 // Because RAS happens on even cycles, and CAS happens on odd cycles, reads to different banks
 // can be overlapped - they just need to be 2 cycles apart:
@@ -195,25 +167,25 @@ assign SDRAM_DQML = sd_dqm[0];
 // CL2
 
 // |     RAS     |     CAS     |     MASK    |    LATCH    |     RAS     |     CAS     |
-// | Act  | .... | .... | Read | .... | .... | .... | Ltch | Act  | .... | .... | Read | ....
+// | Act  | .... | .... | Read | .... | .... | Ltch | .... | Act  | .... | .... | Read | ....
 
 // |     ...     |     RAS     |     CAS     |     MASK    |    LATCH    |     RAS     |
-// | .... | .... | Act  | .... | .... | Read | .... | .... | .... | Ltch | Act  | .... | .... 
+// | .... | .... | Act  | .... | .... | Read | .... | .... | Ltch | .... | Act  | .... | .... 
 
 // |     ...     |     ...     |     RAS     |     CAS     |     MASK    |    LATCH    | ....
-// | .... | .... | .... | .... | Act  | .... | .... | Read | .... | .... | .... | Ltch | Act  | .... |
+// | .... | .... | .... | .... | Act  | .... | .... | Read | .... | .... | Ltch | .... | Act
 
 
 // CL3
 
 // |     RAS     |     CAS     |     MASK    |    LATCH    |     ...     |     RAS     |     CAS     
-// | Act  | .... | .... | Read | DQMs | .... | .... | .... | Ltch | .... | Act  | .... | .... | Read 
+// | Act  | .... | .... | Read | DQMs | .... | .... | Ltch | .... | .... | Act  | .... | .... | Read 
 
 // |     ...     |     RAS     |     CAS     |     MASK    |    LATCH    |     ...     |     RAS     
-// | .... | .... | Act  | .... | .... | Read | DQMs | .... | .... | .... | Ltch | .... | Act  | .... 
+// | .... | .... | Act  | .... | .... | Read | DQMs | .... | .... | Ltch | .... | .... | Act  | .... 
 
 // |     ...     |     ...     |     RAS     |     CAS     |     MASK    |    LATCH    |     ...     
-// | .... | .... | .... | .... | Act  | .... | .... | Read | DQMs | .... | .... | .... | Ltch | .... 
+// | .... | .... | .... | .... | Act  | .... | .... | Read | DQMs | .... | .... | Ltch | .... | ....
 
 
 // Data can be transferred on alternate cycles, until all four banks have been serviced.
@@ -226,28 +198,155 @@ assign SDRAM_DQML = sd_dqm[0];
 
 
 // Write cycles can't immediately follow read cycles; two slots must be left empty
-// to avoid possible contention or mask clashes.
-
-// Read to write cycle, CL2, Burst 1:
-
-// |     RAS     |     CAS     |     MASK    |    LATCH    |     RAS     |     CAS     |
-// | Act  | .... | .... | Read | .... | .... | .... | Ltch | Act  | .... | .... | Read | ....
-
-// |     ...     |   (EMPTY)   |   (EMPTY)   |     RAS     |     CAS     |     MASK    |   
-// | .... | .... | .... | .... | .... | .... | Act  | .... | .... | Writ | .... | .... | ....
-
+// in CL3 mode to avoid possible contention or mask clashes.
 
 // Read to write cycle, CL3, Burst 1:
 
 // |     RAS     |     CAS     |     MASK    |    LATCH    |     ...     |     RAS     |     
-// | Act  | .... | .... | Read | DQMs | .... | .... | .... | Ltch | .... | ACT  | .... | .... 
+// | Act  | .... | .... | Read | DQMs | .... | .... | Ltch | .... | .... | ACT  | .... | .... 
 
 // |     ...     |   (EMPTY)   |   (EMPTY)   |     RAS     |     CAS     |     MASK    |   
 // | .... | .... | .... | .... | .... | .... | Act  | .... | .... | Writ | .... | .... | ....
 
 
+// (In CL2 mode one empty slot should be sufficient, provided we're not using bursts.)
+
+// Read to write cycle, CL2, Burst 1:
+
+// |     RAS     |     CAS     |     MASK    |    LATCH    |     RAS     |     CAS     |
+// | Act  | .... | .... | Read | .... | .... | Ltch | .... | Act  | .... | .... | Read | ....
+
+// |     ...     |   (EMPTY)   |   (EMPTY)   |     RAS     |     CAS     |     MASK    |   
+// | .... | .... | .... | .... | .... | .... | Act  | .... | .... | Writ | .... | .... | ....
+
+
+
 // Write cycles can be followed immediately by either a read or a write cycle.
 
+
+
+// Refresh logic
+
+// Refresh cycles must be carefully timed so as not to disrupt
+// regular accesses.  For VRAM we synchronise to the incoming
+// reference pixel clock and supply a four-cycle window beginning
+// shortly after clkref drops, during which refresh may begin.
+
+reg evencycle;
+reg clkref_d;
+reg [2:0] refreshwindow;
+
+always@(posedge clk) begin
+	evencycle<=!evencycle;
+
+	clkref_d<=clkref;
+	if(clkref_d && !clkref) begin
+			refreshwindow<=3'b001;
+			evencycle<=1'b1;
+	end
+	if(|refreshwindow)
+		refreshwindow<=refreshwindow-1'b1;
+end
+
+wire allowrefresh_vram = |refreshwindow;
+
+
+// Time refreshes for CPU-originated requests so that they
+// immediately follow a ROM request...
+
+reg [3:0] romsync_ctr;
+reg rom_req_d;
+reg allowrefresh_rom;
+
+reg [3:0] aramsync_ctr;
+reg aram_req_d;
+reg allowrefresh_aram;
+
+always @(posedge clk or negedge init_n) begin
+	if(!init_n) begin
+		allowrefresh_rom<=1'b0;
+		allowrefresh_aram<=1'b0;
+	end else begin
+		rom_req_d<=rom_req;
+		if(|romsync_ctr)
+			romsync_ctr<=romsync_ctr-1'b1;
+		else
+			allowrefresh_rom<=1'b0;
+
+		if(rom_req_d!=rom_req) begin
+			allowrefresh_rom<=1'b1;
+			romsync_ctr<=4'hf;
+		end
+
+		aram_req_d<=aram_req;
+		if(|aramsync_ctr)
+			aramsync_ctr<=aramsync_ctr-1'b1;
+		else
+			allowrefresh_aram<=1'b0;
+
+		if(aram_req_d!=aram_req) begin
+			allowrefresh_aram<=1'b1;
+			aramsync_ctr<=4'hf;
+		end
+	end
+end
+
+wire need_refresh[4];
+wire force_refresh[4];
+
+localparam bank0_rowbits=(22-`SDRAM_COLBITS); // 21 bits for ROM, 21 bits for WRAM
+localparam bank1_rowbits=(16-`SDRAM_COLBITS);
+localparam bank2_rowbits=(15-`SDRAM_COLBITS);
+localparam bank3_rowbits=(15-`SDRAM_COLBITS);
+
+reg [bank0_rowbits-1:0] refresh_addr_0;
+reg [bank1_rowbits-1:0] refresh_addr_1;
+reg [bank2_rowbits-1:0] refresh_addr_2;
+reg [bank3_rowbits-1:0] refresh_addr_3;
+
+refresh_schedule #(.tCK(SDRAM_tCK),.rowbits(bank0_rowbits)) refresh_bank0
+(
+	.clk(clk),
+	.reset_n(init_n),
+	.refreshing(cas2_port==PORT_REFRESH && cas_ba==2'b00 ? 1'b1 : 1'b0),
+	.allow(allowrefresh_rom),
+	.refresh_req(need_refresh[0]),
+	.refresh_force(force_refresh[0]),
+	.addr(refresh_addr_0)
+);
+
+refresh_schedule #(.tCK(SDRAM_tCK),.rowbits(bank1_rowbits)) refresh_bank1
+(
+	.clk(clk),
+	.reset_n(init_n),
+	.refreshing(cas2_port==PORT_REFRESH && cas_ba==2'b01 ? 1'b1 : 1'b0),
+	.allow(allowrefresh_aram),
+	.refresh_req(need_refresh[1]),
+	.refresh_force(force_refresh[1]),
+	.addr(refresh_addr_1)
+);
+
+refresh_schedule #(.tCK(SDRAM_tCK),.rowbits(bank2_rowbits)) refresh_bank2
+(
+	.clk(clk),
+	.reset_n(init_n),
+	.refreshing(cas2_port==PORT_REFRESH && cas_ba==2'b10 ? 1'b1 : 1'b0),
+	.allow(allowrefresh_vram),
+	.refresh_req(need_refresh[2]),
+	.refresh_force(force_refresh[2]),
+	.addr(refresh_addr_2)
+);
+
+refresh_schedule #(.tCK(SDRAM_tCK),.rowbits(bank3_rowbits)) refresh_bank3
+(
+	.clk(clk),
+	.reset_n(init_n),
+	.refreshing(cas2_port==PORT_REFRESH && cas_ba==2'b11 ? 1'b1 : 1'b0),
+	.allow(allowrefresh_vram),
+	.refresh_req(need_refresh[3]),
+	.refresh_force(force_refresh[3]),
+	.addr(refresh_addr_3)
+);
 
 
 // Bank logic.
@@ -271,6 +370,7 @@ localparam PORT_WRAM   = 4'd2;
 localparam PORT_VRAM0  = 4'd3;
 localparam PORT_VRAM1  = 4'd4;
 localparam PORT_ARAM   = 4'd5;
+localparam PORT_REFRESH = 4'd6;
 
 reg [3:0] bankreq;
 reg [3:0] bankstate;
@@ -281,74 +381,108 @@ reg [23:1] bankaddr[4];
 reg [1:0] bankdqm[4];
 
 
-// Bank 0 priority encoder - WRAM / ARAM
+// Bank 0 priority encoder - ROM / ARAM
 always @(posedge clk) begin
-	if (wram_req ^ port_state[PORT_WRAM]) begin
+	if((!force_refresh[0]) && rom_req ^ port_state[PORT_ROM]) begin
 		bankreq[0]=1'b1;
+		bankstate[0]=rom_req;
+		bankport[0]=PORT_ROM;
+		bankdqm[0]={!rom_we,!rom_we};
+		bankwrdata[0]=rom_din;
+		bankaddr[0]={2'b00,rom_addr[21:1]};
+		bankwr[0]=rom_we;
+	end else if ((!force_refresh[0]) && wram_req ^ port_state[PORT_WRAM]) begin
+		bankreq[0]=evencycle;
 		bankstate[0]=wram_req;
 		bankport[0]=PORT_WRAM;
 		bankdqm[0]=wram_we ? { ~wram_addr[0], wram_addr[0] } : 2'b11;
 		bankaddr[0]={2'b01,wram_addr[21:1]};
 		bankwr[0]=wram_we;
 		bankwrdata[0]={wram_din,wram_din};
-	end else if (aram_req ^ port_state[PORT_ARAM]) begin
-		bankreq[0]= 1'b1;
-		bankstate[0]=aram_req;
-		bankport[0]=PORT_ARAM;
-		bankdqm[0]=aram_we ? { ~aram_addr[0], aram_addr[0] } : 2'b11;
-		bankaddr[0]={7'b0000001,aram_addr[16:1]};
-		bankwr[0]=aram_we;
-		bankwrdata[0]={aram_din,aram_din};
 	end else begin
-		bankreq[0]=1'b0;
-		// Just to avoid creating latches
+		// Manual refresh logic on idle cycles
+		bankreq[0]=evencycle&need_refresh[0];// &! blockrefresh;
 		bankwr[0]=1'b0;
-		bankstate[0]=wram_req;
-		bankdqm[0]=wram_we ? { ~wram_addr[0], wram_addr[0] } : 2'b11;
-		bankaddr[0]={2'b01, wram_addr[21:1]};
-		bankwr[0]=wram_we;
+		bankstate[0]=1'b0;
+		bankdqm[0]=2'b11;
+		bankaddr[0][`SDRAM_COLBITS:1]<=rom_addr[`SDRAM_COLBITS:1]; // Don't care bits map to another port
+		bankaddr[0][23:`SDRAM_COLBITS+1]<={1'b0,refresh_addr_0};//,{`SDRAM_COLBITS{1'b0}}};
+		bankwr[0]=1'b0;
 		bankwrdata[0]={wram_din,wram_din};
-		bankport[0]=PORT_NONE;
+		bankport[0]=PORT_REFRESH;
 	end
 end
 
 
-// ROM has Bank 1 to itself
+// ARAM has Bank 1 to itself
 always @(posedge clk) begin
-	bankreq[1]=rom_req ^ port_state[PORT_ROM];
-	bankstate[1]=rom_req;
-	bankport[1]=PORT_ROM;
-	bankaddr[1]={2'b00,rom_addr[21:1]};
-	bankdqm[1]={!rom_we,!rom_we};
-	bankwr[1]=rom_we;
-	bankwrdata[1]=rom_din;
+	if ((!force_refresh[1]) && aram_req ^ port_state[PORT_ARAM]) begin
+		bankdqm[1]=aram_we ? { ~aram_addr[0], aram_addr[0] } : 2'b11;
+		bankwrdata[1]={aram_din,aram_din};
+		bankreq[1]=1'b1;
+		bankstate[1]=aram_req;
+		bankport[1]=PORT_ARAM;
+		bankaddr[1]={7'b0000001,aram_addr[16:1]};
+		bankwr[1]=aram_we;
+	end else begin
+		// Manual refresh logic on idle cycles
+		bankreq[1]=evencycle&need_refresh[1];// &! blockrefresh;
+		bankstate[1]=1'b0;
+		bankaddr[1][`SDRAM_COLBITS:1]<=wram_addr[`SDRAM_COLBITS:1]; // Don't care bits map to another port
+		bankaddr[1][23:`SDRAM_COLBITS+1]<={7'b0000001,refresh_addr_1};
+		bankdqm[1]=aram_we ? { ~aram_addr[0], aram_addr[0] } : 2'b11;
+		bankwrdata[1]={aram_din,aram_din};
+		bankwr[1]=1'b0;
+		bankport[1]=PORT_REFRESH;
+	end
 end
 
 // VRAM0 occupies Bank 2
 always @(posedge clk) begin
-	bankreq[2]=vram0_req ^ port_state[PORT_VRAM0];
-	bankstate[2]=vram0_req;
-	bankport[2]=PORT_VRAM0;
-	bankaddr[2]={8'b00000000,vram0_addr};
-	bankwr[2]=vram0_we;
 	bankwrdata[2]=vram0_din;
 	bankdqm[2]={!vram0_we,!vram0_we};
+	if((!force_refresh[2]) && vram0_req ^ port_state[PORT_VRAM0]) begin
+		bankreq[2]=vram0_req ^ port_state[PORT_VRAM0];
+		bankstate[2]=vram0_req;
+		bankport[2]=PORT_VRAM0;
+		bankaddr[2]={8'h00,vram0_addr};
+		bankwr[2]=vram0_we;
+	end else begin
+		// Manual refresh logic on idle cycles
+		bankreq[2]=need_refresh[2];
+		bankstate[2]=1'b0;
+		bankaddr[2][`SDRAM_COLBITS:1]<=vram0_addr[`SDRAM_COLBITS:1]; // Don't care bits map to another port
+		bankaddr[2][23:`SDRAM_COLBITS+1]<={8'h00,refresh_addr_2};
+		bankwr[2]=1'b0;
+		bankport[2]=PORT_REFRESH;
+	end
 end
 
 // VRAM1 occupies Bank 3
 always @(posedge clk) begin
-	bankreq[3]=vram1_req ^ port_state[PORT_VRAM1];
-	bankstate[3]=vram1_req;
-	bankport[3]=PORT_VRAM1;
-	bankaddr[3]={8'b00000000,vram1_addr};
-	bankwr[3]=vram1_we;
 	bankwrdata[3]=vram1_din;
 	bankdqm[3]={!vram1_we,!vram1_we};
+	if((!force_refresh[3]) && vram1_req ^ port_state[PORT_VRAM1]) begin
+		bankreq[3]=1'b1;
+		bankstate[3]=vram1_req;
+		bankport[3]=PORT_VRAM1;
+		bankaddr[3]={8'h00,vram1_addr};
+		bankwr[3]=vram1_we;
+	end else begin
+		// Manual refresh logic on idle cycles
+		bankreq[3]=need_refresh[3];
+		bankstate[3]=1'b0;
+		bankaddr[3][`SDRAM_COLBITS:1]=vram1_addr[`SDRAM_COLBITS:1]; // Don't care bits map to another port
+		bankaddr[3][23:`SDRAM_COLBITS+1]<={8'h00,refresh_addr_3};
+		bankwr[3]=1'b0;
+		bankport[3]=PORT_REFRESH;
+	end
 end
 
 
 // Keep track of when a write cycle is allowed.
 // We can only write if the prevous 2 RAS slots weren't reads.
+// (Unless we're running CL2, or we've taken care of timings to avoid contention.)
 
 reg [1:0] readcycles;
 
@@ -356,21 +490,27 @@ reg [1:0] readcycles;
 // If VRAM wants to write we reserve a slot;
 // other ports have to wait for the bus to be idle.
 
+wire writepending_c;
 reg writepending;
-always @(posedge clk) begin
-	writepending <= (vram0_we & (vram0_req ^ port_state[PORT_VRAM0]))
+reg writeblocked;
+reg reservewrite;
+
+assign writepending_c = (vram0_we & (vram0_req ^ port_state[PORT_VRAM0]))
 			| (vram1_we & (vram1_req ^ port_state[PORT_VRAM1]));
+
+always @(posedge clk) begin
+	writepending <= writepending_c;
+	writeblocked <= |readcycles;
+	reservewrite <= writepending & (|readcycles);
 end
 
-wire writeblocked = |readcycles;
-wire reservewrite = writepending & writeblocked;
+
+// Track the state of each port's req signal when most recently serviced
 
 reg port_state[10];
 
 
 // RAS stage
-
-// Command variables required for CAS
 
 reg [1:0] ras_ba;
 reg [`SDRAM_COLBITS-1:0] ras_casaddr;
@@ -418,6 +558,7 @@ assign SDRAM_DQ = dq_reg;
 reg init = 1'b1;
 reg [4:0] reset;
 
+
 always @(posedge clk,negedge init_n) begin
 
 	if(!init_n) begin
@@ -440,8 +581,6 @@ always @(posedge clk,negedge init_n) begin
 		reset<=5'd31;
 	end else begin
 
-		refresh_cnt <= refresh_cnt + 1'd1;
-
 		for(loopvar=0; loopvar<4; loopvar=loopvar+1) begin
 			if(!bankready[loopvar])
 				bankbusy[loopvar]<=bankbusy[loopvar]-4'b1;
@@ -449,35 +588,33 @@ always @(posedge clk,negedge init_n) begin
 
 `ifndef VERILATOR
 		dq_reg<=16'bZZZZZZZZZZZZZZZZ;
-//		SDRAM_DQ<=16'bZZZZZZZZZZZZZZZZ;
 `endif
 
 		SDRAM_A <= cas_addr;
+		sd_dqm<=2'b11;
 		
 		if(init) begin
 			// initialization takes place at the end of the reset phase
 			sd_cmd<=CMD_INHIBIT;
 			if(bankready[0]) begin
+				case(reset)
+					16: cas_addr[10]<=1'b1;	// Precharge all banks - set in advance to reduce address mux
+					15: sd_cmd <= CMD_PRECHARGE;
+					11: sd_cmd <= CMD_AUTO_REFRESH;
+					10: sd_cmd <= CMD_AUTO_REFRESH;
+					9: sd_cmd <= CMD_AUTO_REFRESH;
+					8: sd_cmd <= CMD_AUTO_REFRESH;
+					7: sd_cmd <= CMD_AUTO_REFRESH;
+					6: sd_cmd <= CMD_AUTO_REFRESH;
+					5: sd_cmd <= CMD_AUTO_REFRESH;
+					4: sd_cmd <= CMD_AUTO_REFRESH;
+					3: cas_addr <= MODE;	// Put the mode on the address bus in advance of the command.
+					2: begin
+						sd_cmd <= CMD_LOAD_MODE;
+						SDRAM_BA <= 2'b00;
+					end
+				endcase
 
-				if(reset == 16) begin
-					cas_addr[10]<=1'b1;	// Precharge all banks - set in advance to reduce address mux
-				end
-
-				if(reset == 15) begin
-					sd_cmd <= CMD_PRECHARGE;
-//					SDRAM_A[10] <= 1'b1;      // precharge all banks
-				end
-
-				if(reset == 10 || reset == 8) begin
-					sd_cmd <= CMD_AUTO_REFRESH;
-					cas_addr <= MODE;	// Put the mode on the address bus in advance of the command.
-				end
-
-				if(reset == 2) begin
-					sd_cmd <= CMD_LOAD_MODE;
-//					SDRAM_A <= MODE;
-					SDRAM_BA <= 2'b00;
-				end
 				reset<=reset-1'b1;
 				bankbusy[0]<=BANK_DELAY[4:0];
 				if(reset==0)
@@ -494,7 +631,6 @@ always @(posedge clk,negedge init_n) begin
 			drive_dq<=1'b0;
 `endif
 			sd_cmd<=CMD_INHIBIT;
-			sd_dqm<=2'b11;
 			// RAS stage
 			ras1_port<=PORT_NONE;
 			ras1_act<=1'b0;
@@ -508,19 +644,14 @@ always @(posedge clk,negedge init_n) begin
 				
 				// First check and initiate refresh cycles if necessary.
 
-				// FIXME should really have some way to force refreshes rather than 
-				// waiting for the bus to be idle.
-				if(!(&bankreq) && need_refresh && (&bankready) & !blockrefresh) begin
-					sd_cmd<=CMD_AUTO_REFRESH;
-					refresh_cnt<=0;
-					bankbusy[0]<=REFRESH_DELAY[4:0];
-					bankbusy[1]<=REFRESH_DELAY[4:0];
-					bankbusy[2]<=REFRESH_DELAY[4:0];
-					bankbusy[3]<=REFRESH_DELAY[4:0];
-				end else if(!reservewrite) begin
+				if(!reservewrite) begin
 					// VRAM ports have priority
 					if(bankreq[2] && bankready[2] && (!writepending || bankwr[2]) && !(writeblocked && bankwr[2])) begin
-						readcycles[1]<=~bankwr[2];
+						// We have to block two subsequent write slots,
+						// unless we're operating CL2 with burst 1,
+						// in which case we only need to block 1
+						readcycles[(`SDRAM_RISKCONTENTION || `SDRAM_CL==2) && BURST_LENGTH==3'b000 ? 0 : 1]<=~bankwr[2];
+
 						port_state[bankport[2]]<=bankstate[2];
 						bankbusy[2]<=BANK_DELAY[4:0];
 						ras_ba<=2'b10;
@@ -535,7 +666,7 @@ always @(posedge clk,negedge init_n) begin
 						SDRAM_A <= bankaddr[2][`SDRAM_ROWBITS+`SDRAM_COLBITS:`SDRAM_COLBITS+1];
 						SDRAM_BA <= 2'b10;
 					end else if(bankreq[3] && bankready[3] && (!writepending || bankwr[3]) && !(writeblocked && bankwr[3])) begin
-						readcycles[1]<=~bankwr[3];
+						readcycles[(`SDRAM_RISKCONTENTION || `SDRAM_CL==2) && BURST_LENGTH==3'b000 ? 0 : 1]<=~bankwr[3];
 						port_state[bankport[3]]<=bankstate[3];
 						bankbusy[3]<=BANK_DELAY[4:0];
 						ras_ba<=2'b11;
@@ -550,7 +681,7 @@ always @(posedge clk,negedge init_n) begin
 						SDRAM_A <= bankaddr[3][`SDRAM_ROWBITS+`SDRAM_COLBITS:`SDRAM_COLBITS+1];
 						SDRAM_BA <= 2'b11;
 					end else if(bankreq[0] && bankready[0] && (!writepending || bankwr[0]) && !(writeblocked && bankwr[0])) begin
-						readcycles[1]<=~bankwr[0];
+						readcycles[(`SDRAM_RISKCONTENTION || `SDRAM_CL==2) && BURST_LENGTH==3'b000 ? 0 : 1]<=~bankwr[0];
 						port_state[bankport[0]]<=bankstate[0];
 						bankbusy[0]<=BANK_DELAY[4:0];
 						ras_ba<=2'b00;
@@ -565,7 +696,7 @@ always @(posedge clk,negedge init_n) begin
 						SDRAM_A <= bankaddr[0][`SDRAM_ROWBITS+`SDRAM_COLBITS:`SDRAM_COLBITS+1];
 						SDRAM_BA <= 2'b00;
 					end else if(bankreq[1] && bankready[1] && (!writepending || bankwr[1]) && !(writeblocked && bankwr[1])) begin
-						readcycles[1]<=~bankwr[1];
+						readcycles[(`SDRAM_RISKCONTENTION || `SDRAM_CL==2) && BURST_LENGTH==3'b000 ? 0 : 1]<=~bankwr[1];
 						port_state[bankport[1]]<=bankstate[1];
 						bankbusy[1]<=BANK_DELAY[4:0];
 						ras_ba<=2'b01;
@@ -600,25 +731,24 @@ always @(posedge clk,negedge init_n) begin
 			if(cas1_port != PORT_NONE) begin 
 				// Action the CAS command, if any
 				SDRAM_BA <= cas_ba;
-//				SDRAM_A <= {4'b0010,cas_addr}; // Autoprecharge
 				if(cas_wr) begin
 					sd_cmd<=CMD_WRITE;
 					bankbusy[cas_ba]<=BANK_WRITE_DELAY[4:0];
 `ifdef VERILATOR
 					drive_dq<=1'b1;
 `endif
-//					SDRAM_DQ<=cas_wrdata;
 					dq_reg <= cas_wrdata;
 					sd_dqm<=cas_dqm;
 				end else begin
 					sd_cmd<=CMD_READ;
-					sd_dqm<=2'b00; // Enable DQs for first word of a read, if any
+					if(`SDRAM_CL==2)
+						sd_dqm<=2'b00; // Enable DQs for first word of a read, if any
 				end
 			end
 
 			cas2_port<=cas1_port;
 
-			if(cas2_port!=PORT_NONE && !cas_wr)	// Enable DQs for reads if CL3
+			if(cas2_port!=PORT_NONE && !cas_wr && `SDRAM_CL==3)	// Enable DQs for reads if CL3
 				sd_dqm<=2'b00;
 
 			// Pump the pipeline.  Write cycles finish here, read cycles continue.
@@ -644,8 +774,15 @@ end
 
 reg [15:0] vram0_dout_r;
 reg [15:0] vram1_dout_r;
+reg [15:0] rom_dout_r;
+reg [15:0] aram_dout_r;
+reg [15:0] wram_dout_r;
+
 assign vram0_dout=latch2_port == PORT_VRAM0 ? sd_din : vram0_dout_r;
 assign vram1_dout=latch2_port == PORT_VRAM1 ? sd_din : vram1_dout_r;
+assign rom_dout=latch2_port == PORT_ROM ? sd_din : rom_dout_r;
+assign aram_dout=latch2_port == PORT_ARAM ? sd_din : aram_dout_r;
+assign wram_dout=latch2_port == PORT_WRAM ? sd_din : wram_dout_r;
 
 always @(posedge clk, negedge init_n) begin
 
@@ -664,39 +801,18 @@ always @(posedge clk, negedge init_n) begin
 		// (Required for some TGfx16 games)
 		if(ras_wr) begin
 			case (ras2_port)
-				PORT_ROM:   rom_req_ack <= rom_req;
-				PORT_WRAM:  begin 
-					wram_req_ack <= wram_req;
-					if (wram_we) begin
-						if (wram_addr[0])
-							wram_dout[15:8] <= wram_din;
-						else
-							wram_dout[7:0] <= wram_din;
-					end
-				end
-				PORT_VRAM0: begin
-					vram0_ack <= vram0_req;
-					vram0_dout_r <= vram0_din;
-				end
-				PORT_VRAM1: begin
-					vram1_ack <= vram1_req;
-					vram1_dout_r <= vram1_din;
-				end
-				PORT_ARAM:  begin 
-					aram_req_ack <= aram_req;
-					if (aram_we) begin
-						if (aram_addr[0])
-							aram_dout[15:8] <= aram_din;
-						else
-							aram_dout[7:0] <= aram_din;
-					end
-				end
+				PORT_ROM: rom_req_ack <= rom_req;
+				PORT_WRAM: wram_req_ack <= wram_req;
+				PORT_VRAM0: vram0_ack <= vram0_req;
+				PORT_VRAM1: vram1_ack <= vram1_req;
+				PORT_ARAM: aram_req_ack <= aram_req;
 				default: ;
 			endcase
 		end
 
 		// Early ack for READs (writes acked anyway, so no need to bother filtering them out.)
-		if(`SDRAM_CL==2) begin			case (ras1_port)
+		if(`SDRAM_CL==2) begin
+			case (ras1_port)
 				PORT_VRAM0: vram0_ack <= vram0_req;
 				PORT_VRAM1: vram1_ack <= vram1_req;
 				default: ;
@@ -710,15 +826,106 @@ always @(posedge clk, negedge init_n) begin
 		end
 		latch2_port<=latch1_port;
 
-		case (latch2_port)
-			PORT_ROM:   begin rom_dout    <= sd_din; rom_req_ack <= rom_req;   end
-			PORT_WRAM:  begin wram_dout   <= sd_din; wram_req_ack <= wram_req; end
-			PORT_VRAM0: begin vram0_dout_r  <= sd_din; end // vram0_ack <= vram0_req;   end // Ack'ed early
-			PORT_VRAM1: begin vram1_dout_r  <= sd_din; end // vram1_ack <= vram1_req;   end // Ack'ed early
-			PORT_ARAM:  begin aram_dout   <= sd_din; aram_req_ack <= aram_req; end
+		case (latch1_port)
+			PORT_ROM:	rom_req_ack <= rom_req;
+			PORT_ARAM:	aram_req_ack <= aram_req;
+			PORT_WRAM:	wram_req_ack <= wram_req;
+//			PORT_VRAM0:	vram0_ack <= vram0_req; //Ack'ed early
+//			PORT_VRAM1:	vram1_ack <= vram1_req;
 			default: ;
 		endcase
+
+		case (latch2_port)
+			PORT_ROM:	rom_dout_r <= sd_din;
+			PORT_ARAM:	aram_dout_r <= sd_din;
+			PORT_WRAM:	wram_dout_r <= sd_din;
+			PORT_VRAM0:	vram0_dout_r <= sd_din;
+			PORT_VRAM1:	vram1_dout_r <= sd_din;
+			default: ;
+		endcase
+	
+		// Mirror input ports to output on write
+
+		if (aram_we && (aram_req ^ port_state[PORT_ARAM])) begin
+			if (aram_addr[0])
+				aram_dout_r[15:8] <= aram_din;
+			else
+				aram_dout_r[7:0] <= aram_din;
+		end
+
+		if (wram_we && (wram_req ^ port_state[PORT_WRAM])) begin
+			if (wram_addr[0])
+				wram_dout_r[15:8] <= wram_din;
+			else
+				wram_dout_r[7:0] <= wram_din;
+		end
+
+		if (vram0_we && (vram0_req ^ port_state[PORT_VRAM0]))
+			vram0_dout_r <= vram0_din;
+
+		if (vram1_we && (vram1_req ^ port_state[PORT_VRAM1]))
+			vram1_dout_r <= vram1_din;
+	
 	end
 end
+
+endmodule
+
+
+module refresh_schedule #(parameter tCK=7813, parameter tREF=64, parameter rowbits=13)
+(
+	input clk,
+	input reset_n,
+	input refreshing,
+	input allow,
+	output refresh_req,
+	output refresh_force,
+	output [rowbits-1:0] addr
+);
+
+// Refresh timing: (2*rowbits) refreshes = tREF milliseconds
+// 1 refresh = tREF/(2**rowbit) ms
+// 1 ms = 10^9 / tCK cycles
+// 1 refresh = (10^9*tREF)/(tCK * 2**rowbit) cycles;
+localparam khz = (10**9)/tCK;
+localparam ticksperrefresh = (khz*tREF)/(2**rowbits)-2;
+localparam forcetime = ticksperrefresh-4;
+reg [19:0] refresh_count;
+reg need_refresh;
+reg force_refresh;
+
+reg [rowbits-1:0] addr_r;
+
+assign refresh_req=(allow & need_refresh) | force_refresh;
+assign refresh_force=force_refresh;
+
+always @(posedge clk or negedge reset_n) begin
+	if(!reset_n) begin
+		addr_r<={rowbits{1'b0}};
+		refresh_count<=20'b0;
+`ifdef VERILATOR
+		$display("%m : tpr %d",ticksperrefresh);
+`endif
+	end else begin
+		refresh_count<=refresh_count+1'b1;
+
+		if(refreshing) begin
+			need_refresh<=1'b0;
+			force_refresh<=1'b0;
+			addr_r<=addr_r+1'b1;
+		end
+
+		if(refresh_count==ticksperrefresh) begin
+			need_refresh<=1'b1;
+			refresh_count<=20'b0;
+		end
+
+		if(refresh_count==forcetime) begin
+			force_refresh<=need_refresh;
+		end
+	end
+end
+
+assign addr=addr_r;
 
 endmodule

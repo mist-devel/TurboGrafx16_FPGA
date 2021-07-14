@@ -618,12 +618,12 @@ end
 
 // Clamp audio 
 wire audiol_sign=audioL[21];
-wire [17:0] audiol_clamp = (audioL[21:18] == 4'b1111 || audioL[21:18]==4'b0000) ? audioL[17:0] : {18{~audiol_sign}};
+wire [18:0] audiol_clamp = (audioL[21:19] == 3'b111 || audioL[21:19]==3'b000) ? audioL[18:0] : {19{~audiol_sign}};
 
 wire audior_sign=audioR[21];
-wire [17:0] audior_clamp = (audioR[21:18] == 4'b1111 || audioR[21:18]==4'b0000) ? audioR[17:0] : {18{~audior_sign}};
+wire [18:0] audior_clamp = (audioR[21:19] == 3'b111 || audioR[21:19]==3'b000) ? audioR[18:0] : {19{~audior_sign}};
 
-hybrid_pwm_sd_2ndorder #(.signalwidth(19)) dac
+hybrid_pwm_sd_2ndorder #(.signalwidth(20)) dac
 (
 	.clk(clk_sys),
 	.reset_n(1'b1),
