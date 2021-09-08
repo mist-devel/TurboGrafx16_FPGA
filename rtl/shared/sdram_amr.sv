@@ -384,32 +384,32 @@ reg [1:0] bankdqm[4];
 // Bank 0 priority encoder - ROM / ARAM
 always @(posedge clk) begin
 	if((!force_refresh[0]) && rom_req ^ port_state[PORT_ROM]) begin
-		bankreq[0]=1'b1;
-		bankstate[0]=rom_req;
-		bankport[0]=PORT_ROM;
-		bankdqm[0]={!rom_we,!rom_we};
-		bankwrdata[0]=rom_din;
-		bankaddr[0]={2'b00,rom_addr[21:1]};
-		bankwr[0]=rom_we;
+		bankreq[0]<=1'b1;
+		bankstate[0]<=rom_req;
+		bankport[0]<=PORT_ROM;
+		bankdqm[0]<={!rom_we,!rom_we};
+		bankwrdata[0]<=rom_din;
+		bankaddr[0]<={2'b00,rom_addr[21:1]};
+		bankwr[0]<=rom_we;
 	end else if ((!force_refresh[0]) && wram_req ^ port_state[PORT_WRAM]) begin
-		bankreq[0]=evencycle;
-		bankstate[0]=wram_req;
-		bankport[0]=PORT_WRAM;
-		bankdqm[0]=wram_we ? { ~wram_addr[0], wram_addr[0] } : 2'b11;
-		bankaddr[0]={2'b01,wram_addr[21:1]};
-		bankwr[0]=wram_we;
-		bankwrdata[0]={wram_din,wram_din};
+		bankreq[0]<=evencycle;
+		bankstate[0]<=wram_req;
+		bankport[0]<=PORT_WRAM;
+		bankdqm[0]<=wram_we ? { ~wram_addr[0], wram_addr[0] } : 2'b11;
+		bankaddr[0]<={2'b01,wram_addr[21:1]};
+		bankwr[0]<=wram_we;
+		bankwrdata[0]<={wram_din,wram_din};
 	end else begin
 		// Manual refresh logic on idle cycles
-		bankreq[0]=evencycle&need_refresh[0];// &! blockrefresh;
-		bankwr[0]=1'b0;
-		bankstate[0]=1'b0;
-		bankdqm[0]=2'b11;
+		bankreq[0]<=evencycle&need_refresh[0];// &! blockrefresh;
+		bankwr[0]<=1'b0;
+		bankstate[0]<=1'b0;
+		bankdqm[0]<=2'b11;
 		bankaddr[0][`SDRAM_COLBITS:1]<=rom_addr[`SDRAM_COLBITS:1]; // Don't care bits map to another port
 		bankaddr[0][23:`SDRAM_COLBITS+1]<={1'b0,refresh_addr_0};//,{`SDRAM_COLBITS{1'b0}}};
-		bankwr[0]=1'b0;
-		bankwrdata[0]={wram_din,wram_din};
-		bankport[0]=PORT_REFRESH;
+		bankwr[0]<=1'b0;
+		bankwrdata[0]<={wram_din,wram_din};
+		bankport[0]<=PORT_REFRESH;
 	end
 end
 
@@ -417,65 +417,65 @@ end
 // ARAM has Bank 1 to itself
 always @(posedge clk) begin
 	if ((!force_refresh[1]) && aram_req ^ port_state[PORT_ARAM]) begin
-		bankdqm[1]=aram_we ? { ~aram_addr[0], aram_addr[0] } : 2'b11;
-		bankwrdata[1]={aram_din,aram_din};
-		bankreq[1]=1'b1;
-		bankstate[1]=aram_req;
-		bankport[1]=PORT_ARAM;
-		bankaddr[1]={7'b0000001,aram_addr[16:1]};
-		bankwr[1]=aram_we;
+		bankdqm[1]<=aram_we ? { ~aram_addr[0], aram_addr[0] } : 2'b11;
+		bankwrdata[1]<={aram_din,aram_din};
+		bankreq[1]<=1'b1;
+		bankstate[1]<=aram_req;
+		bankport[1]<=PORT_ARAM;
+		bankaddr[1]<={7'b0000001,aram_addr[16:1]};
+		bankwr[1]<=aram_we;
 	end else begin
 		// Manual refresh logic on idle cycles
-		bankreq[1]=evencycle&need_refresh[1];// &! blockrefresh;
-		bankstate[1]=1'b0;
+		bankreq[1]<=evencycle&need_refresh[1];// &! blockrefresh;
+		bankstate[1]<=1'b0;
 		bankaddr[1][`SDRAM_COLBITS:1]<=wram_addr[`SDRAM_COLBITS:1]; // Don't care bits map to another port
 		bankaddr[1][23:`SDRAM_COLBITS+1]<={7'b0000001,refresh_addr_1};
-		bankdqm[1]=aram_we ? { ~aram_addr[0], aram_addr[0] } : 2'b11;
-		bankwrdata[1]={aram_din,aram_din};
-		bankwr[1]=1'b0;
-		bankport[1]=PORT_REFRESH;
+		bankdqm[1]<=aram_we ? { ~aram_addr[0], aram_addr[0] } : 2'b11;
+		bankwrdata[1]<={aram_din,aram_din};
+		bankwr[1]<=1'b0;
+		bankport[1]<=PORT_REFRESH;
 	end
 end
 
 // VRAM0 occupies Bank 2
 always @(posedge clk) begin
-	bankwrdata[2]=vram0_din;
-	bankdqm[2]={!vram0_we,!vram0_we};
+	bankwrdata[2]<=vram0_din;
+	bankdqm[2]<={!vram0_we,!vram0_we};
 	if((!force_refresh[2]) && vram0_req ^ port_state[PORT_VRAM0]) begin
-		bankreq[2]=vram0_req ^ port_state[PORT_VRAM0];
-		bankstate[2]=vram0_req;
-		bankport[2]=PORT_VRAM0;
-		bankaddr[2]={8'h00,vram0_addr};
-		bankwr[2]=vram0_we;
+		bankreq[2]<=vram0_req ^ port_state[PORT_VRAM0];
+		bankstate[2]<=vram0_req;
+		bankport[2]<=PORT_VRAM0;
+		bankaddr[2]<={8'h00,vram0_addr};
+		bankwr[2]<=vram0_we;
 	end else begin
 		// Manual refresh logic on idle cycles
-		bankreq[2]=need_refresh[2];
-		bankstate[2]=1'b0;
+		bankreq[2]<=need_refresh[2];
+		bankstate[2]<=1'b0;
 		bankaddr[2][`SDRAM_COLBITS:1]<=vram0_addr[`SDRAM_COLBITS:1]; // Don't care bits map to another port
 		bankaddr[2][23:`SDRAM_COLBITS+1]<={8'h00,refresh_addr_2};
-		bankwr[2]=1'b0;
-		bankport[2]=PORT_REFRESH;
+		bankwr[2]<=1'b0;
+		bankport[2]<=PORT_REFRESH;
 	end
 end
 
 // VRAM1 occupies Bank 3
 always @(posedge clk) begin
-	bankwrdata[3]=vram1_din;
-	bankdqm[3]={!vram1_we,!vram1_we};
+	bankwrdata[3]<=vram1_din;
+	bankdqm[3]<={!vram1_we,!vram1_we};
 	if((!force_refresh[3]) && vram1_req ^ port_state[PORT_VRAM1]) begin
-		bankreq[3]=1'b1;
-		bankstate[3]=vram1_req;
-		bankport[3]=PORT_VRAM1;
-		bankaddr[3]={8'h00,vram1_addr};
-		bankwr[3]=vram1_we;
+		bankreq[3]<=1'b1;
+		bankstate[3]<=vram1_req;
+		bankport[3]<=PORT_VRAM1;
+		bankaddr[3]<={8'h00,vram1_addr};
+		bankwr[3]<=vram1_we;
 	end else begin
 		// Manual refresh logic on idle cycles
-		bankreq[3]=need_refresh[3];
-		bankstate[3]=1'b0;
-		bankaddr[3][`SDRAM_COLBITS:1]=vram1_addr[`SDRAM_COLBITS:1]; // Don't care bits map to another port
+		bankreq[3]<=need_refresh[3];
+		bankstate[3]<=1'b0;
+		bankaddr[3][`SDRAM_COLBITS:1]<=vram1_addr[`SDRAM_COLBITS:1]; // Don't care bits map to another port
 		bankaddr[3][23:`SDRAM_COLBITS+1]<={8'h00,refresh_addr_3};
-		bankwr[3]=1'b0;
-		bankport[3]=PORT_REFRESH;
+		bankwr[3]<=1'b0;
+		bankport[3]<=PORT_REFRESH;
 	end
 end
 
