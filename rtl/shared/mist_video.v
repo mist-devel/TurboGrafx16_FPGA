@@ -148,7 +148,7 @@ cofi_ng #(.VIDEO_DEPTH(6)) cofi (
 wire [5:0] r_final, g_final, b_final;
 wire hs_final,vs_final,cs_final;
 
-RGBtoYPbPr rgb2ypbpr
+RGBtoYPbPr #(.WIDTH(6)) rgb2ypbpr
 (
 	.clk      ( clk_sys ),
 	.ena      ( ypbpr   ),
