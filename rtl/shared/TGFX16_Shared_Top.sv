@@ -154,7 +154,7 @@ wire        user_io_spi_do;
 
 assign      SPI_DO = !CONF_DATA0 ? user_io_spi_do : !SPI_SS2 ? data_io_spi_do : 1'bZ;
 
-user_io #(.STRLEN($size(CONF_STR)>>3)) user_io
+user_io #(.STRLEN($size(CONF_STR)>>3), .FEATURES(32'h2) /* PCE-CD */) user_io
 (
 	.clk_sys(clk_sys),
 	.clk_sd(clk_sys),
