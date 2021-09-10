@@ -78,6 +78,7 @@ architecture rtl of cd is
 	signal SCSI_MSG_N			: std_logic;
 	signal SCSI_CD_N			: std_logic;
 	signal SCSI_IO_N			: std_logic;
+	signal CD_STOP_CD_SND		: std_logic;
 	
 	signal CD_DTD				: std_logic;	--CD data transfer done flag
 	signal CD_DTR				: std_logic;	--CD data transfer ready flag
@@ -557,6 +558,7 @@ begin
 		DOUT_REQ		=> CD_DOUT_REQ,
 		DOUT			=> CD_DOUT,
 		DOUT_SEND	=> CD_DOUT_SEND,
+		STOP_CD_SND	=> CD_STOP_CD_SND,
 		
 		CD_DATA		=> CD_DATA,
 		CD_WR			=> CD_WR and DM,
@@ -712,8 +714,13 @@ begin
 			if SAMPLE_CE = '1' and EN = '1' then	-- ~44.1kHz
 				if FIFO_EMPTY = '0' then
 					FIFO_RD_REQ <= '1';
-					OUTL <= resize(signed(FIFO_Q(15 downto 0)) * signed('0'&CDDA_FADE_VOL), OUTL'length);
-					OUTR <= resize(signed(FIFO_Q(31 downto 16)) * signed('0'&CDDA_FADE_VOL), OUTR'length);
+					if (CD_STOP_CD_SND = '0') then
+						OUTL <= resize(signed(FIFO_Q(15 downto 0)) * signed('0'&CDDA_FADE_VOL), OUTL'length);
+						OUTR <= resize(signed(FIFO_Q(31 downto 16)) * signed('0'&CDDA_FADE_VOL), OUTR'length);
+					else
+						OUTL <= (others => '0');
+						OUTR <= (others => '0');
+					end if;
 				end if;
 			end if;
 		end if;
