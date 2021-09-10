@@ -172,6 +172,7 @@ architecture rtl of cd is
 	signal FIFO_Q 				: std_logic_vector(31 downto 0);
 	signal FIFO_USEDW       : std_logic_vector(11 downto 0);
 	signal SAMPLE_CE 			: std_logic;
+	signal ADPCM_CE             : std_logic;
 	signal OUTL 				: signed(25 downto 0);
 	signal OUTR 				: signed(25 downto 0);
 	
@@ -608,13 +609,15 @@ begin
 			M5205_CLK_CNT <= 0;
 			M5205_CLK <= '0';
 		elsif rising_edge(CLK) then
+			M5205_CLK <= '0';
 			if EN = '1' then
-				-- M5205 CLK = 42954545Hz / (ACT(n)+1)
-				M5205_CLK <= '0';
-				M5205_CLK_CNT <= M5205_CLK_CNT + 1;
-				if M5205_CLK_CNT >= ACT(to_integer(unsigned(ADPCM_FREQ))) then
-					M5205_CLK_CNT <= 0;
-					M5205_CLK <= '1';
+				if ADPCM_CE = '1' then
+					-- M5205 CLK = 42954545Hz / (ACT(n)+1)
+					M5205_CLK_CNT <= M5205_CLK_CNT + 1;
+					if M5205_CLK_CNT >= 15 - unsigned(ADPCM_FREQ) then
+						M5205_CLK_CNT <= 0;
+						M5205_CLK <= '1';
+					end if;
 				end if;
 			end if;
 		end if;
@@ -689,6 +692,14 @@ begin
 		CE   			=> SAMPLE_CE
 	);
 
+	ADPCM_CLK_GEN : entity work.CEGen
+	port map(
+		CLK         => CLK,
+		RST_N       => RST_N,
+		IN_CLK      => 42954545,
+		OUT_CLK     => 1540200,
+		CE          => ADPCM_CE
+	);
 	
 	process( RST_N, CLK )
 	begin
