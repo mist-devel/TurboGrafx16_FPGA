@@ -1,3 +1,4 @@
+#include "configstring.h"
 #include "keyboard.h"
 
 /* Key -> gamepad mapping.  We override this to swap buttons A and B for NES. */
@@ -25,12 +26,12 @@ unsigned char joy_keymap[]=
 /* Initial ROM */
 const char *bootrom_name="AUTOBOOTSGX";
 extern unsigned char romtype;
-extern unsigned char cfgidx;
+
 char *autoboot()
 {
 	char *result=0;
 	romtype=1;
-	cfgidx=1;
+	configstring_index=1;
 	LoadROM(bootrom_name);
 	return(result);
 }

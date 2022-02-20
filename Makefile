@@ -1,20 +1,22 @@
 DEMISTIFYPATH=DeMiSTify
-SUBMODULES=$(DEMISTIFYPATH)/EightThirtyTwo/Makefile
+SUBMODULES=$(DEMISTIFYPATH)/EightThirtyTwo/lib832/lib832.a
 PROJECT=tgfx16
 PROJECTPATH=./
 PROJECTTOROOT=../
 BOARD=
+ROMOPT=-speed
 ROMSIZE1=16384
 ROMSIZE2=8192
+STACKSIZE=320
 
-all: $(DEMISTIFYPATH)/site.mk firmware init compile tns mist
+all: $(DEMISTIFYPATH)/site.template $(DEMISTIFYPATH)/site.mk $(SUBMODULES) firmware init compile tns mist
+# Use the file least likely to change within DeMiSTify to detect submodules!
+$(DEMISTIFYPATH)/COPYING:
+	git submodule update --init --recursive
 
-$(DEMISTIFYPATH)/site.mk:
+$(DEMISTIFYPATH)/site.mk: $(DEMISTIFYPATH)/COPYING
 	$(info ******************************************************)
-	$(info Please checkout submodules using "git submodule init" )
-	$(info followed by "git submodule update --recursive")
-	$(info )
-	$(info Then Copy the example DeMiSTify/site.template file to)
+	$(info Please copy the example DeMiSTify/site.template file to)
 	$(info DeMiSTify/site.mk and edit the paths for the version(s))
 	$(info of Quartus you have installed.)
 	$(info *******************************************************)
@@ -22,13 +24,19 @@ $(DEMISTIFYPATH)/site.mk:
 
 include $(DEMISTIFYPATH)/site.mk
 
-$(SUBMODULES):
+$(DEMISTIFYPATH)/EightThirtyTwo/Makefile:
 	git submodule update --init --recursive
+
+$(SUBMODULES): $(DEMISTIFYPATH)/EightThirtyTwo/Makefile
 	make -C $(DEMISTIFYPATH) -f bootstrap.mk
 
 .PHONY: firmware
 firmware: $(SUBMODULES)
-	make -C firmware -f ../$(DEMISTIFYPATH)/Scripts/firmware.mk DEMISTIFYPATH=../$(DEMISTIFYPATH) ROMSIZE1=$(ROMSIZE1) ROMSIZE2=$(ROMSIZE2)
+	make -C firmware -f ../$(DEMISTIFYPATH)/firmware/Makefile OPT=$(ROMOPT) DEMISTIFYPATH=../$(DEMISTIFYPATH) STACKSIZE=$(STACKSIZE) ROMSIZE1=$(ROMSIZE1) ROMSIZE2=$(ROMSIZE2)
+
+.PHONY: firmware_clean
+firmware_clean: $(SUBMODULES)
+	make -C firmware -f ../$(DEMISTIFYPATH)/firmware/Makefile DEMISTIFYPATH=../$(DEMISTIFYPATH) clean
 
 .PHONY: init
 init:
@@ -42,11 +50,17 @@ compile:
 clean:
 	make -f $(DEMISTIFYPATH)/Makefile DEMISTIFYPATH=$(DEMISTIFYPATH) PROJECTTOROOT=$(PROJECTTOROOT) PROJECTPATH=$(PROJECTPATH) PROJECTS=$(PROJECT) BOARD=$(BOARD) clean
 
+.PHONY: implicit
+implicit:
+	@for BOARD in ${BOARDS}; do \
+		grep -r implicit $$BOARD/output_files/*.rpt || echo -n ; \
+	done
+
 .PHONY: tns
 tns:
 	@for BOARD in ${BOARDS}; do \
 		echo $$BOARD; \
-		grep -r Design-wide\ TNS $$BOARD/*.rpt; \
+		grep -r Design-wide\ TNS $$BOARD/output_files/*.rpt; \
 	done
 
 .PHONY: mist

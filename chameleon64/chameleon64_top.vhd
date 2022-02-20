@@ -479,16 +479,17 @@ begin
 
 	-- Pass internal signals to external SPI interface
 	spi_clk <= spi_clk_int;
-
+	
 	controller : entity work.substitute_mcu
 	generic map (
-		sysclk_frequency => 500,
+		sysclk_frequency => 1000,
 		debug => false,
-		SPI_FASTBIT => 3,
+		SPI_FASTBIT => 1,
+		SPI_INTERNALBIT => 0,
 		SPI_EXTERNALCLK => true
 	)
 	port map (
-		clk => clk_50,
+		clk => clk_100,
 		reset_in => not reset,
 		reset_out => reset_n,
 

@@ -11,6 +11,7 @@ set sys_clk   "${topmodule}pll|altpll_component|auto_generated|pll1|clk[2]"
 
 # Clock groups
 set_clock_groups -asynchronous -group [get_clocks {spiclk}] -group [get_clocks ${topmodule}pll|altpll_component|auto_generated|pll1|clk[*]]
+set_clock_groups -asynchronous -group [get_clocks {spiclkfast}] -group [get_clocks ${topmodule}pll|altpll_component|auto_generated|pll1|clk[*]]
 
 # Some relaxed constrain to the VGA pins. The signals should arrive together, the delay is not really important.
 set_output_delay -clock [get_clocks $sys_clk] -max 0 [get_ports ${VGA_OUT}]
