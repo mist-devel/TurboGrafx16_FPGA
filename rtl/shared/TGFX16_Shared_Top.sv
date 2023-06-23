@@ -128,7 +128,7 @@ wire        scandoubler_disable;
 wire        no_csync;
 
 wire        ioctl_wr;
-wire [24:0] ioctl_addr;
+wire [26:0] ioctl_addr;
 wire [15:0] ioctl_dout;
 wire        ioctl_download;
 wire  [7:0] ioctl_index;
@@ -150,9 +150,6 @@ wire        sd_buff_wr;
 wire        sd_buff_rd;
 wire  [1:0] img_mounted;
 wire [31:0] img_size;
-wire        user_io_spi_do;
-
-assign      SPI_DO = !CONF_DATA0 ? user_io_spi_do : !SPI_SS2 ? data_io_spi_do : 1'bZ;
 
 user_io #(.STRLEN($size(CONF_STR)>>3), .FEATURES(32'h2) /* PCE-CD */) user_io
 (
@@ -161,7 +158,7 @@ user_io #(.STRLEN($size(CONF_STR)>>3), .FEATURES(32'h2) /* PCE-CD */) user_io
 	.SPI_SS_IO(CONF_DATA0),
 	.SPI_CLK(SPI_SCK),
 	.SPI_MOSI(SPI_DI),
-	.SPI_MISO(user_io_spi_do),
+	.SPI_MISO(SPI_DO),
 
 	.conf_str(CONF_STR),
 
@@ -196,17 +193,29 @@ user_io #(.STRLEN($size(CONF_STR)>>3), .FEATURES(32'h2) /* PCE-CD */) user_io
 	.img_size(img_size)
 );
 
-wire data_io_spi_di = SPI_SS4 ? SPI_DI : SPI_DO;
-wire data_io_spi_do;
-
-data_io data_io
+data_io #(.DOUT_16(1'b1)) data_io
 (
 	.clk_sys(clk_sys),
 	.SPI_SCK(SPI_SCK),
-	.SPI_DI(data_io_spi_di),
-	.SPI_DO(data_io_spi_do),
+	.SPI_DI(SPI_DI),
+	.SPI_DO(SPI_DO),
 	.SPI_SS2(SPI_SS2),
 	.SPI_SS4(SPI_SS4),
+
+	.ioctl_wr(ioctl_wr),
+	.ioctl_addr(ioctl_addr),
+	.ioctl_dout(ioctl_dout),
+	.ioctl_download(ioctl_download),
+	.ioctl_index(ioctl_index)
+);
+
+data_io_pce data_io_pce
+(
+	.clk_sys(clk_sys),
+	.SPI_SCK(SPI_SCK),
+	.SPI_DI(SPI_DI),
+	.SPI_DO(SPI_DO),
+	.SPI_SS2(SPI_SS2),
 
 	.cd_stat(cd_stat),
 	.cd_stat_strobe(cd_stat_rec),
@@ -220,17 +229,12 @@ data_io data_io
 	.cd_dat_req(cd_dat_req),
 	.cd_dataout_req(cd_dataout_req),
 	.cd_reset_req(cd_reset_req),
-	.cd_fifo_halffull(cd_fifo_halffull),
-
-	.ioctl_wr(ioctl_wr),
-	.ioctl_addr(ioctl_addr),
-	.ioctl_dout(ioctl_dout),
-	.ioctl_download(ioctl_download),
-	.ioctl_index(ioctl_index)
+	.cd_fifo_halffull(cd_fifo_halffull)
 );
 
 ////////////////////////////  SDRAM  ///////////////////////////////////
-wire        romhdr = ioctl_addr[9:0] == 10'h200; // has 512 byte header
+wire [26:0] romsize = ioctl_addr + 2'd2;
+wire        romhdr = romsize[9:0] == 10'h200; // has 512 byte header
 wire [21:0] ROM_ADDR;
 wire [21:1] rom_addr_rw = cart_download ? ioctl_addr[21:1] : ( ROM_ADDR[21:1] + { romhdr, 8'h0 } );
 reg  [21:1] rom_addr_sd;
@@ -453,8 +457,8 @@ pce_top #(.LITE(LITE), .PSG_O_WIDTH(20), .USE_INTERNAL_RAM(1'b1)) pce_top
 	.ROM_RDY((rom_req == rom_req_ack) && (wram_req == wram_req_ack)),
 	.ROM_A(ROM_ADDR),
 	.ROM_DO(ROM_Q),
-	.ROM_SZ(ioctl_addr[23:16]),
-	.ROM_POP(populous[ioctl_addr[9]]),
+	.ROM_SZ(romsize[23:16]),
+	.ROM_POP(populous[romsize[9]]),
 	.ROM_CLKEN(ce_rom),
 
 	.EXT_RAM_A(WRAM_ADDR),
