@@ -303,7 +303,7 @@ always @(posedge clk_sys) begin
 	ioctl_wr_last <= ioctl_wr;
 	ce_vidD <= ce_vid;
 
-	if ((~cart_download && ROM_RD && rom_addr_sd != rom_addr_rw) || ((ioctl_wr_last ^ ioctl_wr) & cart_download)) begin
+	if ((~cart_download && ROM_RD && rom_addr_sd != rom_addr_rw) || ((!ioctl_wr_last & ioctl_wr) & cart_download)) begin
 		rom_req <= ~rom_req;
 		rom_addr_sd <= rom_addr_rw;
 	end
@@ -401,7 +401,7 @@ always @(posedge clk_sys) begin
 	if(~old_download && cart_download) begin
 		populous <= 2'b11;
 	end
-	else if((ioctl_wr_last ^ ioctl_wr) & cart_download) begin
+	else if((!ioctl_wr_last & ioctl_wr) & cart_download) begin
 		if((ioctl_addr[23:4] == 'h212) || (ioctl_addr[23:4] == 'h1f2)) begin
 			case(ioctl_addr[3:0])
 				 6: if(ioctl_dout != 'h4F50) populous[ioctl_addr[13]] <= 0;
