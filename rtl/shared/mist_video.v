@@ -41,6 +41,8 @@ module mist_video
 
 	input        HSync,
 	input        VSync,
+	input        HBlank,
+	input        VBlank,
 
 	// MiST video output signals
 	output reg [5:0] VGA_R,
@@ -58,6 +60,7 @@ parameter SD_SCNT_WIDTH = 12;
 parameter COLOR_DEPTH = 6; // 1-6
 parameter OSD_AUTO_CE = 1'b1;
 parameter SYNC_AND = 1'b0; // 0 - XOR, 1 - AND
+parameter USE_BLANKS = 1'b0;
 
 // Scandouble the incoming signal. Scandoubler is bypassed if scandouble_disable is set.
 
@@ -66,6 +69,8 @@ wire [5:0] SD_G_O;
 wire [5:0] SD_B_O;
 wire       SD_HS_O;
 wire       SD_VS_O;
+wire       SD_HB_O;
+wire       SD_VB_O;
 
 wire pixel_ena;
 
@@ -81,11 +86,15 @@ scandoubler (
 	.ce_divider ( ce_divider ),
 	.hs_in      ( HSync      ),
 	.vs_in      ( VSync      ),
+	.hb_in      ( HBlank     ),
+	.vb_in      ( VBlank     ),
 	.r_in       ( R          ),
 	.g_in       ( G          ),
 	.b_in       ( B          ),
 	.hs_out     ( SD_HS_O    ),
 	.vs_out     ( SD_VS_O    ),
+	.hb_out     ( SD_HB_O    ),
+	.vb_out     ( SD_VB_O    ),
 	.r_out      ( SD_R_O     ),
 	.g_out      ( SD_G_O     ),
 	.b_out      ( SD_B_O     )
@@ -99,7 +108,7 @@ wire [5:0] osd_r_o;
 wire [5:0] osd_g_o;
 wire [5:0] osd_b_o;
 
-osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE) osd
+osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS) osd
 (
 	.clk_sys ( clk_sys ),
 	.rotate  ( rotate  ),
@@ -112,6 +121,8 @@ osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE) osd
 	.B_in    ( SD_B_O ),
 	.HSync   ( SD_HS_O ),
 	.VSync   ( SD_VS_O ),
+	.HBlank  ( SD_HB_O ),
+	.VBlank  ( SD_VB_O ),
 	.R_out   ( osd_r_o ),
 	.G_out   ( osd_g_o ),
 	.B_out   ( osd_b_o )
@@ -129,7 +140,7 @@ cofi_ng #(.VIDEO_DEPTH(6)) cofi (
 	.scandoubler_disable ( scandoubler_disable ),
 	.enable  ( blend ),
 	.coefficient ( blend_coeff   ),
-	.hblank  ( ~SD_HS_O ),
+	.hblank  ( USE_BLANKS ? SD_HB_O : ~SD_HS_O ),
 	.hs      ( SD_HS_O ),
 	.vs      ( SD_VS_O ),
 	.red     ( osd_r_o ),

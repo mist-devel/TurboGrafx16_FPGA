@@ -554,7 +554,7 @@ pce_top #(.LITE(LITE), .PSG_O_WIDTH(20), .USE_INTERNAL_RAM(1'b1)) pce_top
 //////////////////   VIDEO   //////////////////
 wire [2:0] r,g,b;
 wire hs,vs;
-wire hbl,vbl, bl = hbl | vbl;
+wire hbl,vbl;
 wire bw;
 wire ce_vid;
 wire [1:0] dcc;
@@ -574,7 +574,7 @@ begin
 	endcase
 end
 
-mist_video #(.SD_HCNT_WIDTH(10), .COLOR_DEPTH(3)) mist_video
+mist_video #(.SD_HCNT_WIDTH(10), .COLOR_DEPTH(3), .USE_BLANKS(1'b1)) mist_video
 (
 	.clk_sys(clk_sys),
 	.scanlines(scanlines),
@@ -590,9 +590,11 @@ mist_video #(.SD_HCNT_WIDTH(10), .COLOR_DEPTH(3)) mist_video
 	.SPI_SS3(SPI_SS3),
 	.HSync(~hs),
 	.VSync(~vs),
-	.R(bl ? 3'd0 : r),
-	.G(bl ? 3'd0 : g),
-	.B(bl ? 3'd0 : b),
+	.HBlank(hbl),
+	.VBlank(vbl),
+	.R(r),
+	.G(g),
+	.B(b),
 	.VGA_HS(VGA_HS),
 	.VGA_VS(VGA_VS),
 	.VGA_R(VGA_R),
