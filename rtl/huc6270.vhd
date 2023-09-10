@@ -5,7 +5,7 @@ library work;
 
 entity HUC6270 is
 	generic(
-		MAX_SPRITES : integer := 64
+		MAX_SPRITES : integer := 42
 	);
 	port( 
 		CLK		: in std_logic;
@@ -294,6 +294,7 @@ architecture rtl of HUC6270 is
 begin
 
 	process(CLK, RST_N)
+	variable fetch_cnt: integer range 0 to 2;
 	begin
 		if RST_N = '0' then
 			DOT_CNT <= (others=>'0');
@@ -302,14 +303,26 @@ begin
 			HDW <= (others=>'0');
 			HDS <= (others=>'0');
 			CM <= '0';
+			fetch_cnt := 0;
 		elsif rising_edge(CLK) then
 
-			FETCH_CE <= not FETCH_CE;
+			if fetch_cnt = 2 then
+				fetch_cnt := 0;
+			else
+				fetch_cnt := fetch_cnt + 1;
+			end if;
+			if fetch_cnt = 0 then
+				FETCH_CE <= '1';
+			else
+				FETCH_CE <= '0';
+			end if;
+			--FETCH_CE <= not FETCH_CE;
 			if FETCH_CE = '1' then
 				FETCH_DOT <= FETCH_DOT + 1;
 			end if;
 
 			if SPR_FETCH = '0' then
+				fetch_cnt := 0;
 				FETCH_CE  <= '0';
 				FETCH_DOT <= (others=>'0');
 			end if;
