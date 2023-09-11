@@ -20,9 +20,9 @@ module TGFX16_Shared_Top
 (
    input         CLOCK_27,   // Input clock 27 MHz
 
-   output  [5:0] VGA_R,
-   output  [5:0] VGA_G,
-   output  [5:0] VGA_B,
+   output [VGA_BITS-1:0] VGA_R,
+   output [VGA_BITS-1:0] VGA_G,
+   output [VGA_BITS-1:0] VGA_B,
    output        VGA_HS,
    output        VGA_VS,
 
@@ -80,9 +80,24 @@ parameter CONF_STR = {
 `endif
 	"P2OB,Mouse,Disable,Enable;",
 	"OE,Arcade Card,Disabled,Enabled;",
+`ifdef USE_INTERNAL_VRAM
+	"OG,Sprite Limit,Original,42;",
+`endif
 	"T0,Reset;",
 	"V,v1.0.",`BUILD_DATE
 };
+
+`ifdef VGA_8BIT
+localparam VGA_BITS = 8;
+`else
+localparam VGA_BITS = 6;
+`endif
+
+`ifdef USE_INTERNAL_VRAM
+localparam MAX_SPRITES = 42;
+`else
+localparam MAX_SPRITES = 16;
+`endif
 
 wire [1:0] scanlines = status[2:1];
 wire       overscan = ~status[3];
@@ -94,6 +109,11 @@ wire       buttons6 = status[10];
 wire       mouse_en = status[11];
 wire       bk_save = status[15];
 wire       ac_en = status[14];
+`ifdef USE_INTERNAL_VRAM
+wire       sp64 = status[16];
+`else
+wire       sp64 = 0;
+`endif
 
 ////////////////////   CLOCKS   ///////////////////
 
@@ -325,6 +345,7 @@ always @(posedge clk_sys) begin
 
 end
 
+`ifndef USE_INTERNAL_VRAM
 always @(posedge clk_mem) begin
 
 	vram0_weD <= VRAM0_WE;
@@ -344,6 +365,48 @@ always @(posedge clk_mem) begin
 	end
 
 end
+`else
+always @(*) begin
+	vram0_addr_sd = 0;
+	vram0_din = 0;
+	vram0_req = 0;
+	vram0_weD = 0;
+	vram1_addr_sd = 0;
+	vram1_din = 0;
+	vram1_req = 0;
+	vram1_weD = 0;
+end
+
+dpram #(.addr_width(15), .data_width(16)) vram0_inst
+(
+	.clock       (clk_sys),
+
+	.address_a   (VRAM0_ADDR[15:1]),
+	.wren_a      (VRAM0_WE),
+	.data_a      (VRAM0_D),
+	.q_a         (VRAM0_Q),
+
+	.address_b   (),
+	.wren_b      (1'b0),
+	.data_b      (),
+	.q_b         ()
+);
+
+dpram #(.addr_width(15), .data_width(16)) vram1_inst
+(
+	.clock       (clk_sys),
+
+	.address_a   (VRAM1_ADDR[15:1]),
+	.wren_a      (VRAM1_WE),
+	.data_a      (VRAM1_D),
+	.q_a         (VRAM1_Q),
+
+	.address_b   (),
+	.wren_b      (1'b0),
+	.data_b      (),
+	.q_b         ()
+);
+`endif
 
 sdram_amr #(.SDRAM_tCK(7813)) sdram // 128Mhz clock speed, tCK is ~7813ps
 (
@@ -371,14 +434,22 @@ sdram_amr #(.SDRAM_tCK(7813)) sdram // 128Mhz clock speed, tCK is ~7813ps
 	.vram0_ack(),
 	.vram0_addr(vram0_addr_sd),
 	.vram0_din(vram0_din),
+`ifndef USE_INTERNAL_VRAM
 	.vram0_dout(VRAM0_Q),
+`else
+	.vram0_dout(),
+`endif
 	.vram0_we(vram0_weD),
 
 	.vram1_req(sgx & vram1_req),
 	.vram1_ack(),
 	.vram1_addr(vram1_addr_sd),
 	.vram1_din(vram1_din),
+`ifndef USE_INTERNAL_VRAM
 	.vram1_dout(VRAM1_Q),
+`else
+	.vram1_dout(),
+`endif
 	.vram1_we(vram1_weD),
 
 	.aram_addr(aram_addr_sd),
@@ -447,7 +518,7 @@ wire signed [19:0] cdda_sl, cdda_sr;
 wire signed [15:0] adpcm_s;
 wire signed [19:0] psg_sl, psg_sr;
 
-pce_top #(.LITE(LITE), .PSG_O_WIDTH(20), .USE_INTERNAL_RAM(1'b1)) pce_top
+pce_top #(.LITE(LITE), .PSG_O_WIDTH(20), .USE_INTERNAL_RAM(1'b1), .MAX_SPRITES(MAX_SPRITES)) pce_top
 (
 	.RESET(reset),
 
@@ -496,7 +567,7 @@ pce_top #(.LITE(LITE), .PSG_O_WIDTH(20), .USE_INTERNAL_RAM(1'b1)) pce_top
 	.GG_RESET(1'b0),
 	.GG_AVAIL(1'b0),
 
-	.SP64(1'b0),
+	.SP64(sp64),
 	.SGX(sgx && !LITE),
 
 	.JOY_OUT(joy_out),
@@ -574,7 +645,7 @@ begin
 	endcase
 end
 
-mist_video #(.SD_HCNT_WIDTH(10), .COLOR_DEPTH(3), .USE_BLANKS(1'b1)) mist_video
+mist_video #(.SD_HCNT_WIDTH(10), .COLOR_DEPTH(3), .USE_BLANKS(1'b1), .OUT_COLOR_DEPTH(VGA_BITS)) mist_video
 (
 	.clk_sys(clk_sys),
 	.scanlines(scanlines),
