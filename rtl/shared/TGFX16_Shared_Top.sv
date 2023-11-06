@@ -122,10 +122,10 @@ localparam VGA_BITS = 6;
 
 `ifdef BIG_OSD
 localparam bit BIG_OSD = 1;
-localparam SEP = "-;";
+`define SEP "-;",
 `else
 localparam bit BIG_OSD = 0;
-localparam SEP = "";
+`define SEP
 `endif
 
 // remove this if the 2nd chip is actually used
@@ -163,7 +163,7 @@ parameter CONF_STR = {
 	"S0,SAV,Mount;",
 	"TF,Write Save RAM;",
 `endif
-	SEP,
+	`SEP
 	"P1,Video options;",
 	"P1O12,Scandoubler Fx,None,CRT 25%,CRT 50%,CRT 75%;",
 	"P1O3,Overscan,Hidden,Visible;",
@@ -176,12 +176,12 @@ parameter CONF_STR = {
 	"P2OA,Controller,2 Buttons,6 Buttons;",
 `endif
 	"P2OB,Mouse,Disable,Enable;",
-	SEP,
+	`SEP
 	"OE,Arcade Card,Disabled,Enabled;",
 `ifdef USE_INTERNAL_VRAM
 	"OG,Sprite Limit,Original,42;",
 `endif
-	SEP,
+	`SEP
 	"T0,Reset;",
 	"V,v1.0.",`BUILD_DATE
 };
