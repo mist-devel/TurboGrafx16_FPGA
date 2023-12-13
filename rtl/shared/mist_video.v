@@ -49,7 +49,10 @@ module mist_video
 	output reg [OUT_COLOR_DEPTH-1:0] VGA_G,
 	output reg [OUT_COLOR_DEPTH-1:0] VGA_B,
 	output reg      VGA_VS,
-	output reg      VGA_HS
+	output reg      VGA_HS,
+	output reg      VGA_HB,
+	output reg      VGA_VB,
+	output reg      VGA_DE
 );
 
 parameter OSD_COLOR    = 3'd4;
@@ -107,6 +110,7 @@ scandoubler (
 // Overlay the on-screen display
 // FIXME - should output delayed Sync pulses
 
+
 wire [OUT_COLOR_DEPTH-1:0] osd_r_o;
 wire [OUT_COLOR_DEPTH-1:0] osd_g_o;
 wire [OUT_COLOR_DEPTH-1:0] osd_b_o;
@@ -119,23 +123,23 @@ osd #(OSD_X_OFFSET, OSD_Y_OFFSET, OSD_COLOR, OSD_AUTO_CE, USE_BLANKS, OUT_COLOR_
 	.SPI_DI  ( SPI_DI  ),
 	.SPI_SCK ( SPI_SCK ),
 	.SPI_SS3 ( SPI_SS3 ),
-	.R_in    ( SD_R_O ),
-	.G_in    ( SD_G_O ),
-	.B_in    ( SD_B_O ),
-	.HSync   ( SD_HS_O ),
-	.VSync   ( SD_VS_O ),
+	.R_in    ( SD_R_O  ),
+	.G_in    ( SD_G_O  ),
+	.B_in    ( SD_B_O  ),
 	.HBlank  ( SD_HB_O ),
 	.VBlank  ( SD_VB_O ),
+	.HSync   ( SD_HS_O ),
+	.VSync   ( SD_VS_O ),
 	.R_out   ( osd_r_o ),
 	.G_out   ( osd_g_o ),
 	.B_out   ( osd_b_o )
 );
 
-
 // Apply composite video simulation filter, bypassed if blend is low
 
 wire [OUT_COLOR_DEPTH-1:0] cofi_r, cofi_g, cofi_b;
 wire       cofi_hs, cofi_vs;
+wire       cofi_hb, cofi_vb;
 
 cofi_ng #(.VIDEO_DEPTH(OUT_COLOR_DEPTH)) cofi (
 	.clk     ( clk_sys ),
@@ -144,6 +148,7 @@ cofi_ng #(.VIDEO_DEPTH(OUT_COLOR_DEPTH)) cofi (
 	.enable  ( blend ),
 	.coefficient ( blend_coeff   ),
 	.hblank  ( USE_BLANKS ? SD_HB_O : ~SD_HS_O ),
+	.vblank  ( SD_VB_O ),
 	.hs      ( SD_HS_O ),
 	.vs      ( SD_VS_O ),
 	.red     ( osd_r_o ),
@@ -151,46 +156,53 @@ cofi_ng #(.VIDEO_DEPTH(OUT_COLOR_DEPTH)) cofi (
 	.blue    ( osd_b_o ),
 	.hs_out  ( cofi_hs ),
 	.vs_out  ( cofi_vs ),
+	.hblank_out (cofi_hb ),
+	.vblank_out (cofi_vb ),
 	.red_out ( cofi_r  ),
 	.green_out( cofi_g ),
 	.blue_out( cofi_b  )
 );
 
-
 // Finally convert to YPbPr, bypassed is ypbpr is low
+wire       hs, vs, cs;
+wire       hb, vb;
+wire [OUT_COLOR_DEPTH-1:0] r,g,b;
 
-wire [OUT_COLOR_DEPTH-1:0] r_final, g_final, b_final;
-wire hs_final,vs_final,cs_final;
-
-RGBtoYPbPr #(.WIDTH(OUT_COLOR_DEPTH)) rgb2ypbpr
+RGBtoYPbPr #(OUT_COLOR_DEPTH) rgb2ypbpr
 (
-	.clk      ( clk_sys ),
-	.ena      ( ypbpr   ),
-	.red_in   ( cofi_r ),
-	.green_in ( cofi_g ),
-	.blue_in  ( cofi_b ),
-	.hs_in    ( cofi_hs ),
-	.vs_in    ( cofi_vs ),
-	.cs_in    ( SYNC_AND ? (cofi_hs & cofi_vs) : ~(cofi_hs ^ cofi_vs) ),
-	.red_out  ( r_final ),
-	.green_out( g_final ),
-	.blue_out ( b_final ),
-	.hs_out   ( hs_final),
-	.vs_out   ( vs_final),
-	.cs_out   ( cs_final)
+	.clk       ( clk_sys ),
+	.ena       ( ypbpr   ),
+
+	.red_in    ( cofi_r     ),
+	.green_in  ( cofi_g     ),
+	.blue_in   ( cofi_b     ),
+	.hs_in     ( cofi_hs    ),
+	.vs_in     ( cofi_vs    ),
+	.cs_in     ( SYNC_AND ? (cofi_hs & cofi_vs) : ~(cofi_hs ^ cofi_vs) ),
+	.hb_in     ( cofi_hb    ),
+	.vb_in     ( cofi_vb    ),
+	.red_out   ( r          ),
+	.green_out ( g          ),
+	.blue_out  ( b          ),
+	.hs_out    ( hs         ),
+	.vs_out    ( vs         ),
+	.cs_out    ( cs         ),
+	.hb_out    ( hb         ),
+	.vb_out    ( vb         )
 );
 
-// Register final video signal to avoid hold violations
-always @(posedge clk_sys)
-begin
-	VGA_R <= r_final[OUT_COLOR_DEPTH-1:0];
-	VGA_G <= g_final[OUT_COLOR_DEPTH-1:0];
-	VGA_B <= b_final[OUT_COLOR_DEPTH-1:0];
+always @(posedge clk_sys) begin
+	VGA_R  <= r;
+	VGA_G  <= g;
+	VGA_B  <= b;
+	// a minimig vga->scart cable expects a composite sync signal on the VGA_HS output.
+	// and VCC on VGA_VS (to switch into rgb mode)
+	VGA_HS <= ((~no_csync & scandoubler_disable) || ypbpr)? cs : hs;
+	VGA_VS <= ((~no_csync & scandoubler_disable) || ypbpr)? 1'b1 : vs;
 
-// a minimig vga->scart cable expects a composite sync signal on the VGA_HS output.
-// and VCC on VGA_VS (to switch into rgb mode)
-	VGA_HS <= ((~no_csync & scandoubler_disable) || ypbpr)? cs_final : hs_final;
-	VGA_VS <= ((~no_csync & scandoubler_disable) || ypbpr)? 1'b1 : vs_final;
+	VGA_HB <= hb;
+	VGA_VB <= vb;
+	VGA_DE <= ~(hb | vb);
 end
 
 endmodule

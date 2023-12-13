@@ -39,8 +39,9 @@ module TGFX16_Shared_Top
 	output        HDMI_VS,
 	output        HDMI_PCLK,
 	output        HDMI_DE,
-	output        HDMI_SDA,
-	output        HDMI_SCL,
+	inout         HDMI_SDA,
+	inout         HDMI_SCL,
+	input         HDMI_INT,
 `endif
 
 	input         SPI_SCK,
@@ -92,6 +93,9 @@ module TGFX16_Shared_Top
 	output        I2S_LRCK,
 	output        I2S_DATA,
 `endif
+`ifdef SPDIF_AUDIO
+	output        SPDIF,
+`endif
 `ifdef USE_AUDIO_IN
 	input         AUDIO_IN,
 `endif
@@ -118,6 +122,13 @@ localparam bit QSPI = 0;
 localparam VGA_BITS = 8;
 `else
 localparam VGA_BITS = 6;
+`endif
+
+`ifdef USE_HDMI
+localparam bit HDMI = 1;
+assign HDMI_RST = 1'b1;
+`else
+localparam bit HDMI = 0;
 `endif
 
 `ifdef BIG_OSD
@@ -258,7 +269,18 @@ wire        sd_buff_rd;
 wire  [1:0] img_mounted;
 wire [31:0] img_size;
 
-user_io #(.STRLEN($size(CONF_STR)>>3), .FEATURES(32'h2 | (BIG_OSD << 13)) /* PCE-CD */) user_io
+`ifdef USE_HDMI
+wire        i2c_start;
+wire        i2c_read;
+wire  [6:0] i2c_addr;
+wire  [7:0] i2c_subaddr;
+wire  [7:0] i2c_dout;
+wire  [7:0] i2c_din;
+wire        i2c_ack;
+wire        i2c_end;
+`endif
+
+user_io #(.STRLEN($size(CONF_STR)>>3), .FEATURES(32'h2  /* PCE-CD */ | (BIG_OSD << 13) | (HDMI << 14))) user_io
 (
 	.clk_sys(clk_sys),
 	.clk_sd(clk_sys),
@@ -284,6 +306,17 @@ user_io #(.STRLEN($size(CONF_STR)>>3), .FEATURES(32'h2 | (BIG_OSD << 13)) /* PCE
 	.mouse_y(mouse_y),
 	.mouse_flags(mouse_flags),
 	.mouse_strobe(mouse_strobe),
+
+`ifdef USE_HDMI
+	.i2c_start      (i2c_start      ),
+	.i2c_read       (i2c_read       ),
+	.i2c_addr       (i2c_addr       ),
+	.i2c_subaddr    (i2c_subaddr    ),
+	.i2c_dout       (i2c_dout       ),
+	.i2c_din        (i2c_din        ),
+	.i2c_ack        (i2c_ack        ),
+	.i2c_end        (i2c_end        ),
+`endif
 
 	.sd_conf(1'b0),
 	.sd_sdhc(1'b1),
@@ -796,6 +829,84 @@ hybrid_pwm_sd_2ndorder #(.signalwidth(20)) dac
 	.d_r({~audior_sign, audior_clamp}),
 	.q_r(AUDIO_R)
 );
+
+`ifdef I2S_AUDIO
+i2s i2s
+(
+	.reset(1'b0),
+	.clk(clk_sys),
+	.clk_rate(32'd42_000_000),
+
+	.sclk(I2S_BCK),
+	.lrclk(I2S_LRCK),
+	.sdata(I2S_DATA),
+
+	.left_chan({audiol_sign, audiol_clamp[18:4]}),
+	.right_chan({audior_sign, audior_clamp[18:4]})
+);
+`endif
+
+`ifdef SPDIF_AUDIO
+spdif spdif
+(
+	.clk_i(clk_sys),
+	.rst_i(1'b0),
+	.clk_rate_i(32'd42_000_000),
+	.spdif_o(SPDIF),
+	.sample_i({audior_sign, audior_clamp[18:4], audiol_sign, audiol_clamp[18:4]} )
+);
+`endif
+
+////////////////////////////  HDMI  ///////////////////////////////////
+
+`ifdef USE_HDMI
+i2c_master #(42_000_000) i2c_master (
+	.CLK         (clk_sys),
+	.I2C_START   (i2c_start),
+	.I2C_READ    (i2c_read),
+	.I2C_ADDR    (i2c_addr),
+	.I2C_SUBADDR (i2c_subaddr),
+	.I2C_WDATA   (i2c_dout),
+	.I2C_RDATA   (i2c_din),
+	.I2C_END     (i2c_end),
+	.I2C_ACK     (i2c_ack),
+
+	//I2C bus
+	.I2C_SCL     (HDMI_SCL),
+	.I2C_SDA     (HDMI_SDA)
+);
+
+mist_video #(.SD_HCNT_WIDTH(10), .COLOR_DEPTH(3), .USE_BLANKS(1'b1), .OUT_COLOR_DEPTH(VGA_BITS), .BIG_OSD(BIG_OSD)) hdmi_video
+(
+	.clk_sys(clk_sys),
+	.scanlines(scanlines),
+	.scandoubler_disable(1'b0),
+	.ypbpr(1'b0),
+	.no_csync(1'b1),
+	.rotate(2'b00),
+	.blend(cofi_ena),
+	.blend_coeff(cofi_coeff),
+	.ce_divider(ce_div),
+	.SPI_DI(SPI_DI),
+	.SPI_SCK(SPI_SCK),
+	.SPI_SS3(SPI_SS3),
+	.HSync(~hs),
+	.VSync(~vs),
+	.HBlank(hbl),
+	.VBlank(vbl),
+	.R(r),
+	.G(g),
+	.B(b),
+	.VGA_HS(HDMI_HS),
+	.VGA_VS(HDMI_VS),
+	.VGA_R(HDMI_R),
+	.VGA_G(HDMI_G),
+	.VGA_B(HDMI_B),
+	.VGA_DE(HDMI_DE)
+);
+
+assign HDMI_PCLK = clk_sys;
+`endif
 
 ////////////////////////////  INPUT  ///////////////////////////////////
 wire [31:0] joy_0 = joy_swap ? joy_b : joy_a;
