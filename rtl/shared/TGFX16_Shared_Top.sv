@@ -876,7 +876,7 @@ i2c_master #(42_000_000) i2c_master (
 	.I2C_SDA     (HDMI_SDA)
 );
 
-mist_video #(.SD_HCNT_WIDTH(10), .COLOR_DEPTH(3), .USE_BLANKS(1'b1), .OUT_COLOR_DEPTH(VGA_BITS), .BIG_OSD(BIG_OSD)) hdmi_video
+mist_video #(.SD_HCNT_WIDTH(10), .COLOR_DEPTH(3), .USE_BLANKS(1'b1), .OUT_COLOR_DEPTH(8), .BIG_OSD(BIG_OSD)) hdmi_video
 (
 	.clk_sys(clk_sys),
 	.scanlines(scanlines),
